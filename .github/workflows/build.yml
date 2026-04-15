@@ -16,7 +16,7 @@ jobs:
             arch: x64
           - os: windows-latest
             arch: ia32
-          - os: windows-latest
+          - os: windows-11-arm
             arch: arm64
           # ── macOS (universal binary) ───────────────────────────
           - os: macos-latest
@@ -38,7 +38,7 @@ jobs:
         run: npm install
 
       - name: Build prebuilds
-        run: npx prebuildify --napi --target 20.0.0 --force --strip --verbose
+        run: npx prebuildify --napi --target 20.0.0 --force --strip --verbose --arch ${{ matrix.arch }}
         if: matrix.arch != 'x64+arm64'
 
       - name: Build universal macOS prebuild
