@@ -918,9 +918,15 @@ void ListBaton::Execute() {
     }
     if (isCom) {
       ListResultItem* resultItem = new ListResultItem();
-      resultItem->path = name;
-      resultItem->manufacturer = manufacturer;
-      resultItem->pnpId = pnpId;
+      if (name) {
+        resultItem->path = name;
+      }
+      if (manufacturer) {
+        resultItem->manufacturer = manufacturer;
+      }
+      if (pnpId) {
+        resultItem->pnpId = pnpId;
+      }
       if (vendorId) {
         resultItem->vendorId = vendorId;
       }
@@ -943,7 +949,9 @@ void ListBaton::Execute() {
     free(manufacturer);
     free(name);
 
-    RegCloseKey(hkey);
+    if (hkey != INVALID_HANDLE_VALUE) {
+      RegCloseKey(hkey);
+    }
     memberIndex++;
   }
   if (hDevInfo) {
