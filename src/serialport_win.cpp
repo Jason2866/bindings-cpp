@@ -327,28 +327,12 @@ bool IsClosingHandle(int fd) {
 void __stdcall WriteIOCompletion(DWORD errorCode, DWORD bytesTransferred, OVERLAPPED* ov) {
   WriteBaton* baton = static_cast<WriteBaton*>(ov->hEvent);
   DWORD bytesWritten;
-
-  if (errorCode) {
-    ErrorCodeToString("Writing to COM port (WriteIOCompletion)", errorCode, baton->errorString);
-    baton->complete = true;
-    return;
-  }
-
-  // hEvent holds a user pointer (baton), not a valid event handle.
-  // GetOverlappedResult with bWait=TRUE would call WaitForSingleObject
-  // on hEvent if Internal is still STATUS_PENDING, which fails with
-  // ERROR_INVALID_HANDLE.  Temporarily clear it so the function falls
-  // back to the file-handle signalling path.
-  HANDLE savedEvent = ov->hEvent;
-  ov->hEvent = NULL;
   if (!GetOverlappedResult(int2handle(baton->fd), ov, &bytesWritten, TRUE)) {
-    ov->hEvent = savedEvent;
     errorCode = GetLastError();
     ErrorCodeToString("Writing to COM port (GetOverlappedResult)", errorCode, baton->errorString);
     baton->complete = true;
     return;
   }
-  ov->hEvent = savedEvent;
   if (bytesWritten) {
     baton->offset += bytesWritten;
     if (baton->offset >= baton->bufferLength) {
@@ -457,22 +441,15 @@ void __stdcall ReadIOCompletion(DWORD errorCode, DWORD bytesTransferred, OVERLAP
     return;
   }
 
+  // bytesTransferred is already provided by the APC completion callback.
+  // Do NOT call GetOverlappedResult here — MSDN explicitly states:
+  //   "Do not use GetOverlappedResult for I/O operations that use
+  //    ReadFileEx or WriteFileEx completion routines."
+  // The overlapped's hEvent holds a ReadBaton pointer (not a Windows event
+  // handle), so GetOverlappedResult fails with ERROR_INVALID_HANDLE on
+  // drivers that inspect hEvent (e.g. usbser.sys used by ESP32 native USB).
+
   DWORD lastError;
-  // hEvent holds a user pointer (baton), not a valid event handle.
-  // GetOverlappedResult with bWait=TRUE would call WaitForSingleObject
-  // on hEvent if Internal is still STATUS_PENDING, which fails with
-  // ERROR_INVALID_HANDLE.  Temporarily clear it so the function falls
-  // back to the file-handle signalling path.
-  HANDLE savedEvent = ov->hEvent;
-  ov->hEvent = NULL;
-  if (!GetOverlappedResult(int2handle(baton->fd), ov, &bytesTransferred, TRUE)) {
-    ov->hEvent = savedEvent;
-    lastError = GetLastError();
-    ErrorCodeToString("Reading from COM port (GetOverlappedResult)", lastError, baton->errorString);
-    baton->complete = true;
-    return;
-  }
-  ov->hEvent = savedEvent;
   if (bytesTransferred) {
     baton->bytesToRead -= bytesTransferred;
     baton->bytesRead += bytesTransferred;
@@ -480,7 +457,7 @@ void __stdcall ReadIOCompletion(DWORD errorCode, DWORD bytesTransferred, OVERLAP
   }
   if (!baton->bytesToRead) {
     baton->complete = true;
-    CloseHandle(ov->hEvent);
+    // Note: ov->hEvent is a baton pointer, not a Windows handle — do not CloseHandle
     return;
   }
 
@@ -918,15 +895,9 @@ void ListBaton::Execute() {
     }
     if (isCom) {
       ListResultItem* resultItem = new ListResultItem();
-      if (name) {
-        resultItem->path = name;
-      }
-      if (manufacturer) {
-        resultItem->manufacturer = manufacturer;
-      }
-      if (pnpId) {
-        resultItem->pnpId = pnpId;
-      }
+      resultItem->path = name;
+      resultItem->manufacturer = manufacturer;
+      resultItem->pnpId = pnpId;
       if (vendorId) {
         resultItem->vendorId = vendorId;
       }
@@ -949,9 +920,7 @@ void ListBaton::Execute() {
     free(manufacturer);
     free(name);
 
-    if (hkey != INVALID_HANDLE_VALUE) {
-      RegCloseKey(hkey);
-    }
+    RegCloseKey(hkey);
     memberIndex++;
   }
   if (hDevInfo) {
