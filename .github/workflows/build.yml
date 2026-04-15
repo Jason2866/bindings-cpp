@@ -75,6 +75,9 @@ jobs:
   publish:
     needs: [prebuild, prebuild-linux-arm]
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      id-token: write  # required to use OIDC
     steps:
       - uses: actions/checkout@v6
 
@@ -104,5 +107,8 @@ jobs:
           echo "=== Final prebuilds ==="
           find prebuilds -type f
 
-      - name: Publish to npm
-        run: npm publish --access public
+      - name: Publish to NPM registry (OIDC Trusted Publishing)
+        uses: JS-DevTools/npm-publish@v4
+        with:
+          registry: https://registry.npmjs.org/
+          strategy: all
