@@ -56,7 +56,11 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        arch: [arm, arm64]
+        include:
+          - image: linux-armv7
+            arch: arm
+          - image: linux-arm64
+            arch: arm64
     steps:
       - uses: actions/checkout@v6
       - uses: actions/setup-node@v6
@@ -65,7 +69,7 @@ jobs:
       - name: Install dependencies
         run: npm install
       - name: Cross-compile Linux ARM
-        run: npx prebuildify-cross --napi --target 20.0.0 --force --strip --verbose --arch ${{ matrix.arch }}
+        run: npx prebuildify-cross -i ${{ matrix.image }} --napi --target 20.0.0 --force --strip --verbose
       - name: Upload prebuilds
         uses: actions/upload-artifact@v7
         with:
