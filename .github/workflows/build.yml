@@ -11,73 +11,109 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          # ── Windows ────────────────────────────────────────────
-          - os: windows-latest
-            arch: x64
-          - os: windows-latest
-            arch: ia32
-          - os: windows-11-arm
-            arch: arm64
           # ── macOS (universal binary) ───────────────────────────
-          - os: macos-latest
-            arch: x64+arm64
-          # ── Linux ──────────────────────────────────────────────
-          - os: ubuntu-latest
-            arch: x64
+          - name: darwin
+            os: macos-latest
+            node: x64
+            command: prebuildify
+            args: --arch x64+arm64
 
+          # ── Windows ────────────────────────────────────────────
+          - name: win32-x86
+            os: windows-latest
+            node: x86
+            command: prebuildify
+
+          - name: win32-x64
+            os: windows-latest
+            node: x64
+            command: prebuildify
+
+          - name: win32-arm64
+            os: windows-latest
+            node: x64
+            command: prebuildify
+            args: --arch arm64 --tag-armv 8
+
+          # ── Linux ──────────────────────────────────────────────
+          - name: linux-x64
+            os: ubuntu-latest
+            node: x64
+            command: prebuildify-cross
+            args: -i almalinux-devtoolset11 --tag-libc --libc glibc
+
+          - name: linux-x64-musl
+            os: ubuntu-latest
+            node: x64
+            command: prebuildify-cross
+            args: -i alpine
+
+          - name: linux-arm64
+            os: ubuntu-latest
+            node: x64
+            command: prebuildify-cross
+            args: -i linux-arm64 --tag-libc --libc glibc
+
+          - name: linux-arm64-musl
+            os: ubuntu-latest
+            node: x64
+            command: prebuildify-cross
+            args: -i linux-arm64-musl --tag-libc --libc musl
+
+          - name: linux-arm
+            os: ubuntu-latest
+            node: x64
+            command: prebuildify-cross
+            args: -i linux-armv7 -i linux-armv6 --tag-libc --libc glibc
+
+          - name: linux-arm-musl
+            os: ubuntu-latest
+            node: x64
+            command: prebuildify-cross
+            args: -i linux-armv7l-musl --tag-libc --libc musl
+
+          # ── Android ────────────────────────────────────────────
+          - name: android-arm
+            os: ubuntu-latest
+            node: x64
+            command: prebuildify-cross
+            args: -i android-armv7
+
+          - name: android-arm64
+            os: ubuntu-latest
+            node: x64
+            command: prebuildify-cross
+            args: -i android-arm64
+
+    name: Build ${{ matrix.name }}
     runs-on: ${{ matrix.os }}
 
     steps:
-      - uses: actions/checkout@v6
-
       - uses: actions/setup-node@v6
         with:
           node-version: 20
+          architecture: ${{ matrix.node }}
+
+      - uses: actions/checkout@v6
 
       - name: Install dependencies
         run: npm install
 
       - name: Build prebuilds
-        run: npx prebuildify --napi --target 20.0.0 --force --strip --verbose --arch ${{ matrix.arch }}
-        if: matrix.arch != 'x64+arm64'
-
-      - name: Build universal macOS prebuild
-        run: npx prebuildify --napi --target 20.0.0 --force --strip --verbose --arch x64+arm64
-        if: matrix.arch == 'x64+arm64'
+        run: npx ${{ matrix.command }} --napi --target 20.0.0 --force --strip --verbose ${{ matrix.args }}
 
       - name: Upload prebuilds
         uses: actions/upload-artifact@v7
         with:
-          name: prebuilds-${{ matrix.os }}-${{ matrix.arch }}
+          name: prebuilds-${{ matrix.name }}
           path: prebuilds/
+          if-no-files-found: error
 
-  # Also cross-compile Linux ARM variants
-  prebuild-linux-arm:
-    runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        include:
-          - image: linux-armv7
-            arch: arm
-          - image: linux-arm64
-            arch: arm64
-    steps:
-      - uses: actions/checkout@v6
-      - uses: actions/setup-node@v6
-        with:
-          node-version: 20
-      - name: Install dependencies
-        run: npm install
-      - name: Cross-compile Linux ARM
-        run: npx prebuildify-cross -i ${{ matrix.image }} --napi --target 20.0.0 --force --strip --verbose
-      - name: Upload prebuilds
-        uses: actions/upload-artifact@v7
-        with:
-          name: prebuilds-linux-${{ matrix.arch }}
-          path: prebuilds/
+      - if: failure()
+        run: npx shx ls -lA
 
   publish:
-    needs: [prebuild, prebuild-linux-arm]
+    needs: prebuild
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -99,17 +135,12 @@ jobs:
       - name: Download all prebuilds
         uses: actions/download-artifact@v8
         with:
-          path: /tmp/all-prebuilds
           pattern: prebuilds-*
+          merge-multiple: true
+          path: prebuilds
 
-      - name: Merge prebuilds
-        run: |
-          mkdir -p prebuilds
-          for dir in /tmp/all-prebuilds/prebuilds-*/; do
-            cp -rv "$dir"/* prebuilds/ 2>/dev/null || true
-          done
-          echo "=== Final prebuilds ==="
-          find prebuilds -type f
+      - name: List prebuilds
+        run: find prebuilds -type f
 
       - name: Publish to NPM registry (OIDC Trusted Publishing)
         uses: JS-DevTools/npm-publish@v4
