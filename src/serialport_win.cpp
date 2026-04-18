@@ -345,6 +345,9 @@ void __stdcall WriteIOCompletion(DWORD errorCode, DWORD bytesTransferred, OVERLA
     if (baton->offset >= baton->bufferLength) {
       baton->complete = true;
     }
+  } else {
+    // Zero-byte completion with no error — avoid hanging in WriteThread.
+    baton->complete = true;
   }
 }
 

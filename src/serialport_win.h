@@ -18,7 +18,6 @@ struct WriteBaton {
   char* bufferData = nullptr;
   size_t bufferLength = 0;
   size_t offset = 0;
-  size_t bytesWritten = 0;
   void* hThread = nullptr;
   bool complete = false;
   Napi::ObjectReference buffer;
